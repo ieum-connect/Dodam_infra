@@ -1,0 +1,11 @@
+.env*
+!.env.production.example
+backups/
+releases/
+verification/
+nginx/active/
+__pycache__/
+*.tar
+*.pem
+*.key
+*.log

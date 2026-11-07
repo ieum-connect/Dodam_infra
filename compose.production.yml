@@ -1,0 +1,130 @@
+name: ${COMPOSE_PROJECT_NAME:-dodam-production}
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "10m", max-file: "3"}
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    platform: ${PLATFORM:-linux/amd64}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dodam
+      POSTGRES_USER: dodam
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a random database password}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U dodam -d dodam"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    logging: *logging
+  backend:
+    image: dodam-backend:${RELEASE_TAG:?Set release tag}
+    platform: ${PLATFORM:-linux/amd64}
+    build:
+      context: ${SOURCE_ROOT:-../deployment-sources}/backend
+      dockerfile: ../../infra/docker/backend.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres: {condition: service_healthy}
+    environment:
+      SERVER_PORT: "8081"
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
+      SERVER_SERVLET_SESSION_COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      JWT_COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      DB_URL: jdbc:postgresql://postgres:5432/dodam
+      DB_USER: dodam
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT secret}
+      DEMO_LOGIN: "false"
+      FRONTEND_ORIGIN: ${PUBLIC_ORIGIN:?Set public origin}
+      KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID:-unset}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-}
+      STORAGE_LOCAL_ROOT: /data/object-storage
+      DODAM_STORAGE_PUBLIC_BASE_URL: ${PUBLIC_ORIGIN}/local-documents/
+      AI_BASE_URL: http://ai:8006
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:?Set shared internal token}
+      GOV24_WELFARE_SERVICE_KEY: ${GOV24_WELFARE_SERVICE_KEY:-}
+      GOV24_WELFARE_SYNC_ENABLED: "false"
+    volumes: ["uploads:/data/object-storage"]
+    healthcheck:
+      test: [CMD, curl, -fsS, http://localhost:8081/api/auth/config]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    stop_grace_period: 40s
+    logging: *logging
+  ai:
+    image: dodam-ai:${RELEASE_TAG}
+    platform: ${PLATFORM:-linux/amd64}
+    build:
+      context: ${SOURCE_ROOT:-../deployment-sources}/ai-backend
+      dockerfile: ../../infra/docker/ai.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend: {condition: service_healthy}
+    environment:
+      DATABASE_URL: postgresql+psycopg://dodam:${POSTGRES_PASSWORD}@postgres:5432/dodam
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN}
+      STORAGE_LOCAL_ROOT: /data/object-storage
+      SPRING_BACKEND_BASE_URL: http://backend:8081
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-6-luna}
+      OPENAI_VLM_MODEL: ${OPENAI_VLM_MODEL:-gpt-5.6-sol}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_DIMENSIONS: "768"
+      MEDICAL_RAG_EMBEDDING_DIMENSIONS: "768"
+    volumes: ["uploads:/data/object-storage"]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8006/health',timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    stop_grace_period: 60s
+    logging: *logging
+  web:
+    image: dodam-web:${RELEASE_TAG}
+    platform: ${PLATFORM:-linux/amd64}
+    build:
+      context: ${SOURCE_ROOT:-../deployment-sources}/frontend
+      dockerfile: ../../infra/docker/frontend.Dockerfile
+    restart: unless-stopped
+    networks: [default, edge]
+    depends_on:
+      backend: {condition: service_healthy}
+      ai: {condition: service_healthy}
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${HTTP_PORT:-80}:80"
+      - "${BIND_ADDRESS:-127.0.0.1}:${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/active:/etc/nginx/conf.d:ro
+      - ./nginx/snippets:/etc/nginx/snippets:ro
+      - certificates:/etc/letsencrypt:ro
+      - acme:/var/www/acme:ro
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1/nginx-health]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    logging: *logging
+  certbot:
+    image: certbot/certbot:v5.9.0
+    profiles: [tools]
+    volumes:
+      - certificates:/etc/letsencrypt
+      - acme:/var/www/acme
+volumes:
+  postgres-data:
+  uploads:
+  certificates:
+  acme:
+networks:
+  edge:
+  default:
+    internal: ${ISOLATE_NETWORK:-false}
