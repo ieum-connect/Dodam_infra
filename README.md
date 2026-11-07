@@ -1,6 +1,14 @@
 # 도담(팀 이음) 단일 EC2 배포 안내
 
-이 문서는 **로컬 검증 → AWS 준비 → HTTPS → PWA 확인** 순서다. SilverCare와 무관하다. 현재 소스와 운영 차단 사항은 [AUDIT.md](AUDIT.md), 실행 결과는 [검증 결과](RESULTS.md)에 기록한다. AWS 정보는 미정이며 현재 AWS 배포 완료 주소는 없다.
+**2026-11-08 결정: 11월 16일 시연은 EC2 1대 + Docker Compose로 배포한다.** web·backend·ai·postgres를 같은 서버에서 실행하고 DB와 문서는 named volume에 보관한다. Kubernetes·EKS·ALB·NAT Gateway는 이번 배포에 생성하지 않는다. `planning/`의 Kubernetes 자료는 비교 당시의 참고 자료이며 실행 지침이 아니다.
+
+준비 확인: 사용자 화면 기준 예산 알림 50/70/85달러 및 이메일 인증 완료, 시드니 Standard 온디맨드 한도 16 vCPU(사용 0), 기본 VPC의 DNS와 3개 서브넷 공인 IPv4 자동 할당 및 인터넷 경로 확인. 실제 EC2 생성·도메인·HTTPS·서비스 배포는 아직 미완료다.
+
+현재 계정은 **시드니(ap-southeast-2)** 프로젝트다. 서버 생성은 [시드니 EC2 설정 안내](EC2_SYDNEY.md)를 따른다. 운영 환경 생성기는 `scripts/init-production.py`, 서버 읽기 전용 점검은 `scripts/check-ec2.sh`다.
+
+처음 진행할 때는 [단계별 배포 가이드](DEPLOYMENT_GUIDE.md) 또는 [브라우저용 가이드](도담_배포_가이드라인.html)를 먼저 읽는다. 최초 수동 배포와 후속 ECR·GitHub Actions·SSM 자동화 설계를 구분해 설명한다.
+
+이 문서는 **로컬 검증 → AWS 준비 → HTTPS → PWA 확인** 순서다. SilverCare와 무관하다. 현재 소스와 운영 차단 사항은 [AUDIT.md](AUDIT.md), 실행 결과는 [검증 결과](RESULTS.md)에 기록한다. 개인 무료 플랜 프로젝트의 시드니 리전을 사용하며 서버·도메인은 미정이다. 현재 AWS 배포 완료 주소는 없다.
 
 ## 1. 구성과 사전 조건
 
@@ -56,7 +64,7 @@ docker compose --env-file .env.production.local -f compose.production.yml exec -
 목적: 서버 생성 전에 계정·예산·도메인·백업 정책을 확정한다.
 
 [AWS 콘솔]
-1. 우측 상단 계정과 리전 확인. Billing and Cost Management → Credits/Free Tier에서 실제 적용 조건·만료일 확인. Budgets에서 월 예산과 알림 수신자 설정.
+1. 구글 로그인으로 기존 프로젝트에 접속하고 시드니(ap-southeast-2)를 확인. AWS Settings/청구 관리에서 실제 크레딧 조건·만료일 확인. Budgets에서 예산과 알림 수신자 설정. 현재 가입 방식에서는 리전 메뉴나 URL로 서울로 전환하지 않는다.
 2. EC2 → Instances → Launch instances. 이름 `dodam-production`. Ubuntu LTS와 아키텍처를 선택하되 이미지 PLATFORM과 일치시킨다. 사양·gp3 디스크 용량은 부하/예산 확인 후 결정한다. 1GB RAM에서 세 앱+DB가 안정적이라고 가정하지 않는다.
 3. Key pair(login) → 새 키 또는 승인된 기존 키. 개인키는 개인 PC에 보관하고 공유·저장소 업로드 금지. Network settings → 관리자 공인 IP/32만 SSH 22 허용, 웹 80/443 허용. 5432/8081/8006은 열지 않는다.
 4. Storage → 암호화 활성화, 크기/종료 시 삭제 정책 확인. Advanced details → IMDSv2 required. Instance profile은 실제 필요한 권한만 부여한다.
