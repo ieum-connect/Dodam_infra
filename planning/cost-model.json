@@ -1,0 +1,142 @@
+{
+  "asOf": "2026-11-07",
+  "region": "ap-southeast-2",
+  "currency": "USD",
+  "hoursPerMonth": 730,
+  "gp3": 0.096,
+  "ipv4": 0.005,
+  "alb": 0.0252,
+  "lcu": 0.008,
+  "eks": 0.1,
+  "rates": {
+    "t3.medium": 0.0528,
+    "t3.large": 0.1056,
+    "t3.small": 0.0264
+  },
+  "plans": [
+    {
+      "name": "단일 EC2 · Compose",
+      "instances": {
+        "t3.medium": 1
+      },
+      "disk": 30,
+      "ips": 1,
+      "alb": 0,
+      "eks": 0,
+      "note": "서버 장애 자동 대체 없음",
+      "computeHourly": 0.0528,
+      "components": {
+        "ec2": 38.544,
+        "disk": 2.88,
+        "ipv4": 3.65,
+        "alb": 0.0,
+        "eks": 0.0,
+        "allowance": 10
+      },
+      "monthly": 55.074,
+      "daily": 1.8106520547945206,
+      "days100": 55.2287225672126,
+      "days80": 44.18297805377008
+    },
+    {
+      "name": "kubeadm · 기본형",
+      "instances": {
+        "t3.medium": 3,
+        "t3.small": 1
+      },
+      "disk": 140,
+      "ips": 6,
+      "alb": 1,
+      "eks": 0,
+      "note": "관리 1 + 작업 2 + 데이터 1 / 관리·데이터 단일 지점",
+      "computeHourly": 0.1848,
+      "components": {
+        "ec2": 134.904,
+        "disk": 13.44,
+        "ipv4": 21.9,
+        "alb": 24.236,
+        "eks": 0.0,
+        "allowance": 10
+      },
+      "monthly": 204.48,
+      "daily": 6.722630136986302,
+      "days100": 14.875130412102243,
+      "days80": 11.900104329681794
+    },
+    {
+      "name": "K3s · 관리 HA형",
+      "instances": {
+        "t3.medium": 3,
+        "t3.small": 1
+      },
+      "disk": 140,
+      "ips": 7,
+      "alb": 1,
+      "eks": 0,
+      "note": "관리+작업 3 + 데이터 1 / 데이터 서버는 단일 지점",
+      "computeHourly": 0.1848,
+      "components": {
+        "ec2": 134.904,
+        "disk": 13.44,
+        "ipv4": 25.55,
+        "alb": 24.236,
+        "eks": 0.0,
+        "allowance": 10
+      },
+      "monthly": 208.13,
+      "daily": 6.842630136986301,
+      "days100": 14.614263521196689,
+      "days80": 11.691410816957351
+    },
+    {
+      "name": "Sporty 사양 + ALB",
+      "instances": {
+        "t3.medium": 1,
+        "t3.large": 3
+      },
+      "disk": 140,
+      "ips": 6,
+      "alb": 1,
+      "eks": 0,
+      "note": "과거 청구액 아님 / 진입점 비교를 위해 ALB 추가",
+      "computeHourly": 0.3696,
+      "components": {
+        "ec2": 269.808,
+        "disk": 13.44,
+        "ipv4": 21.9,
+        "alb": 24.236,
+        "eks": 0.0,
+        "allowance": 10
+      },
+      "monthly": 339.384,
+      "daily": 11.157830136986302,
+      "days100": 8.962316039255434,
+      "days80": 7.169852831404348
+    },
+    {
+      "name": "EKS · 표준 지원",
+      "instances": {
+        "t3.medium": 2,
+        "t3.small": 1
+      },
+      "disk": 110,
+      "ips": 5,
+      "alb": 1,
+      "eks": 1,
+      "note": "관리형 제어 영역 + 작업 2 + 데이터 1",
+      "computeHourly": 0.132,
+      "components": {
+        "ec2": 96.36,
+        "disk": 10.56,
+        "ipv4": 18.25,
+        "alb": 24.236,
+        "eks": 73.0,
+        "allowance": 10
+      },
+      "monthly": 232.406,
+      "daily": 7.640745205479453,
+      "days100": 13.087728658755223,
+      "days80": 10.470182927004178
+    }
+  ]
+}

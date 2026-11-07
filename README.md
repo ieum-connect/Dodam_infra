@@ -1,5 +1,9 @@
 # 도담(팀 이음) 단일 EC2 배포 안내
 
+**2026-11-08 결정: 11월 16일 시연은 EC2 1대 + Docker Compose로 배포한다.** web·backend·ai·postgres를 같은 서버에서 실행하고 DB와 문서는 named volume에 보관한다. Kubernetes·EKS·ALB·NAT Gateway는 이번 배포에 생성하지 않는다. `planning/`의 Kubernetes 자료는 비교 당시의 참고 자료이며 실행 지침이 아니다.
+
+준비 확인: 사용자 화면 기준 예산 알림 50/70/85달러 및 이메일 인증 완료, 시드니 Standard 온디맨드 한도 16 vCPU(사용 0), 기본 VPC의 DNS와 3개 서브넷 공인 IPv4 자동 할당 및 인터넷 경로 확인. 실제 EC2 생성·도메인·HTTPS·서비스 배포는 아직 미완료다.
+
 현재 계정은 **시드니(ap-southeast-2)** 프로젝트다. 서버 생성은 [시드니 EC2 설정 안내](EC2_SYDNEY.md)를 따른다. 운영 환경 생성기는 `scripts/init-production.py`, 서버 읽기 전용 점검은 `scripts/check-ec2.sh`다.
 
 처음 진행할 때는 [단계별 배포 가이드](DEPLOYMENT_GUIDE.md) 또는 [브라우저용 가이드](도담_배포_가이드라인.html)를 먼저 읽는다. 최초 수동 배포와 후속 ECR·GitHub Actions·SSM 자동화 설계를 구분해 설명한다.
