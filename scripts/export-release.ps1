@@ -24,6 +24,6 @@ $versions.infra=(git rev-parse HEAD)
 $versions.images=(docker image inspect @images --format '{{.RepoTags}} {{.Id}}')
 $versions | ConvertTo-Json -Depth 5 | Set-Content "$dest/versions.json" -Encoding utf8
 Get-FileHash "$dest/images.tar" -Algorithm SHA256 | Select-Object Hash | ConvertTo-Json | Set-Content "$dest/checksum.json"
-tar -czf "$dest/infra.tar.gz" --exclude=.git --exclude=.env.production.local --exclude=.env.production --exclude=backups --exclude=releases --exclude=verification --exclude=active --exclude=__pycache__ --exclude='*.log' compose.production.yml .env.production.example .gitignore .gitattributes docker nginx postgres scripts README.md AUDIT.md RESULTS.md
+tar -czf "$dest/infra.tar.gz" --exclude=.git --exclude=.env.production.local --exclude=.env.production --exclude=backups --exclude=releases --exclude=verification --exclude=active --exclude=__pycache__ --exclude='*.log' compose.production.yml .env.production.example .gitignore .gitattributes docker nginx postgres scripts README.md AUDIT.md RESULTS.md DEPLOYMENT_GUIDE.md EC2_SYDNEY.md 도담_배포_가이드라인.html
 if ($LASTEXITCODE) {throw 'Configuration export failed'}
 Write-Output "Release created: $dest (no environment secrets included)"
