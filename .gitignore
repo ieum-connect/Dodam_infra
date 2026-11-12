@@ -9,3 +9,8 @@ __pycache__/
 *.pem
 *.key
 *.log
+
+secrets/*
+!secrets/firebase/
+secrets/firebase/*
+!secrets/firebase/.gitkeep

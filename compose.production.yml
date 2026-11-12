@@ -21,7 +21,8 @@ services:
       retries: 30
     logging: *logging
   backend:
-    image: dodam-backend:${RELEASE_TAG:?Set release tag}
+    networks: [default, edge]
+    image: ${BACKEND_IMAGE:-${IMAGE_PREFIX:-}dodam-backend:${RELEASE_TAG:?Set release tag}}
     platform: ${PLATFORM:-linux/amd64}
     build:
       context: ${SOURCE_ROOT:-../deployment-sources}/backend
@@ -42,13 +43,29 @@ services:
       FRONTEND_ORIGIN: ${PUBLIC_ORIGIN:?Set public origin}
       KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID:-unset}
       KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-}
+      KAKAO_ADMIN_KEY: ${KAKAO_ADMIN_KEY:-}
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_CLIENT_AUTHENTICATION_METHOD: client_secret_post
       STORAGE_LOCAL_ROOT: /data/object-storage
       DODAM_STORAGE_PUBLIC_BASE_URL: ${PUBLIC_ORIGIN}/local-documents/
       AI_BASE_URL: http://ai:8006
       AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:?Set shared internal token}
       GOV24_WELFARE_SERVICE_KEY: ${GOV24_WELFARE_SERVICE_KEY:-}
       GOV24_WELFARE_SYNC_ENABLED: "false"
-    volumes: ["uploads:/data/object-storage"]
+      PUSH_ENABLED: ${PUSH_ENABLED:-false}
+      FIREBASE_CREDENTIALS: /run/secrets/firebase/service-account.json
+      FIREBASE_WEB_API_KEY: ${FIREBASE_WEB_API_KEY:-}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+      FIREBASE_SENDER_ID: ${FIREBASE_SENDER_ID:-}
+      FIREBASE_APP_ID: ${FIREBASE_APP_ID:-}
+      FIREBASE_VAPID_KEY: ${FIREBASE_VAPID_KEY:-}
+    volumes:
+      - uploads:/data/object-storage
+      - type: bind
+        source: ${FIREBASE_SECRETS_DIR:-./secrets/firebase}
+        target: /run/secrets/firebase
+        read_only: true
+        bind:
+          create_host_path: false
     healthcheck:
       test: [CMD, curl, -fsS, http://localhost:8081/api/auth/config]
       interval: 10s
@@ -58,7 +75,8 @@ services:
     stop_grace_period: 40s
     logging: *logging
   ai:
-    image: dodam-ai:${RELEASE_TAG}
+    networks: [default, edge]
+    image: ${AI_IMAGE:-${IMAGE_PREFIX:-}dodam-ai:${RELEASE_TAG}}
     platform: ${PLATFORM:-linux/amd64}
     build:
       context: ${SOURCE_ROOT:-../deployment-sources}/ai-backend
@@ -89,7 +107,7 @@ services:
     stop_grace_period: 60s
     logging: *logging
   web:
-    image: dodam-web:${RELEASE_TAG}
+    image: ${WEB_IMAGE:-${IMAGE_PREFIX:-}dodam-web:${RELEASE_TAG}}
     platform: ${PLATFORM:-linux/amd64}
     build:
       context: ${SOURCE_ROOT:-../deployment-sources}/frontend
@@ -116,6 +134,7 @@ services:
   certbot:
     image: certbot/certbot:v5.9.0
     profiles: [tools]
+    networks: [edge]
     volumes:
       - certificates:/etc/letsencrypt
       - acme:/var/www/acme
