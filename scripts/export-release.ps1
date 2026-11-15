@@ -6,9 +6,10 @@ $values=@{}
 Get-Content $EnvFile | ForEach-Object { if ($_ -match '^([^#=]+)=(.*)$') {$values[$matches[1]]=$matches[2]} }
 $tag=$values['RELEASE_TAG']
 if ($tag -notmatch '^[a-zA-Z0-9][a-zA-Z0-9_.-]+$') {throw 'Invalid release tag'}
+$images=@(docker compose --env-file $EnvFile -f compose.production.yml --profile tools config --images)
+if ($LASTEXITCODE -or !$images.Count) {throw 'Could not resolve release images from Compose'}
 $dest=Join-Path $PWD "releases/$tag"
 New-Item -ItemType Directory -Force $dest | Out-Null
-$images=@("dodam-web:$tag","dodam-backend:$tag","dodam-ai:$tag",'pgvector/pgvector:pg16','certbot/certbot:v5.9.0')
 docker pull certbot/certbot:v5.9.0
 if ($LASTEXITCODE) {throw 'Certificate image pull failed'}
 docker image save -o "$dest/images.tar" @images
