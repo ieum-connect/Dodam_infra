@@ -145,6 +145,8 @@ Kakao 키는 해당 도담 앱 값만 입력한다. 운영 AI 기동에는 유�
 
 서비스별 이미지(`BACKEND_IMAGE`, `AI_IMAGE`, `WEB_IMAGE`)나 `IMAGE_PREFIX`를 사용할 때는 export와 운영 Compose가 같은 이미지 이름·태그를 해석하도록 설정한다. 배포 스크립트는 기본 Firebase 마운트 디렉터리(`./secrets/firebase`)를 만든다. 푸시를 사용할 때는 백엔드 컨테이너(UID 10001)가 읽을 수 있는 `service-account.json`을 해당 디렉터리에 따로 준비한다. `FIREBASE_SECRETS_DIR`로 다른 경로를 지정했다면 그 디렉터리도 직접 준비한다.
 
+시연 환경에서는 프런트엔드 [#47](https://github.com/ieum-connect/Dodam_frontend/pull/47)과 Spring 백엔드 [#50](https://github.com/ieum-connect/Dodam_backend/pull/50)의 변경을 포함한 이미지로 배포한다. 운영 환경 파일에서 `DEMO_LOGIN=true`와 `DEMO_SHOWCASE_ONLY=true`를 설정하면 카카오 로그인 아래에 김민지·박지훈 버튼이 표시되고, Spring은 이 두 시연 계정만 접속 코드 없이 허용한다. 프런트엔드는 `/api/auth/config`로 활성 상태를 확인하므로 별도 빌드 환경 변수가 필요 없다. AI 백엔드는 기존 내부 URL과 공유 토큰으로 연결한다. 시연을 종료할 때는 `DEMO_LOGIN=false`로 설정하고 백엔드 컨테이너를 재생성한다.
+
 [AWS EC2 Ubuntu, 관리자 셸]
 ```bash
 bash scripts/deploy.sh .env.production

@@ -39,7 +39,8 @@ services:
       DB_USER: dodam
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       JWT_SECRET: ${JWT_SECRET:?Set JWT secret}
-      DEMO_LOGIN: "false"
+      DEMO_LOGIN: ${DEMO_LOGIN:-false}
+      DEMO_SHOWCASE_ONLY: ${DEMO_SHOWCASE_ONLY:-true}
       FRONTEND_ORIGIN: ${PUBLIC_ORIGIN:?Set public origin}
       KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID:-unset}
       KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-}
