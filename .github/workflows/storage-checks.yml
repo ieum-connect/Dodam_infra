@@ -1,0 +1,21 @@
+name: Storage migration checks
+on:
+  pull_request:
+    paths:
+      - 'scripts/*document-s3.py'
+      - 'compose.production.yml'
+      - '.github/workflows/storage-checks.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install 'boto3>=1.35,<2'
+      - run: python scripts/test-migrate-document-s3.py
