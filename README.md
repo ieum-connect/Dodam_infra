@@ -1,249 +1,415 @@
-# 도담(팀 이음) 단일 EC2 배포 안내
+<div align="center">
 
-**2026-11-08 결정: 11월 16일 시연은 EC2 1대 + Docker Compose로 배포한다.** web·backend·ai·postgres를 같은 서버에서 실행하고 DB와 문서는 named volume에 보관한다. Kubernetes·EKS·ALB·NAT Gateway는 이번 배포에 생성하지 않는다. `planning/`의 Kubernetes 자료는 비교 당시의 참고 자료이며 실행 지침이 아니다.
+<img src="./docs/dodam_logo_effect.gif" alt="Dodam logo banner" width="100%" />
 
-준비 확인: 사용자 화면 기준 예산 알림 50/70/85달러 및 이메일 인증 완료, 시드니 Standard 온디맨드 한도 16 vCPU(사용 0), 기본 VPC의 DNS와 3개 서브넷 공인 IPv4 자동 할당 및 인터넷 경로 확인. 실제 EC2 생성·도메인·HTTPS·서비스 배포는 아직 미완료다.
+# 🌿 도담 · Dodam Infrastructure
 
-현재 계정은 **시드니(ap-southeast-2)** 프로젝트다. 서버 생성은 [시드니 EC2 설정 안내](EC2_SYDNEY.md)를 따른다. 운영 환경 생성기는 `scripts/init-production.py`, 서버 읽기 전용 점검은 `scripts/check-ec2.sh`다.
+### 팀 이음의 도담 서비스를 안정적으로 연결하고 운영하는 배포 저장소
 
-처음 진행할 때는 [단계별 배포 가이드](DEPLOYMENT_GUIDE.md) 또는 [브라우저용 가이드](도담_배포_가이드라인.html)를 먼저 읽는다. 최초 수동 배포와 후속 ECR·GitHub Actions·SSM 자동화 설계를 구분해 설명한다.
+[![Service](https://img.shields.io/badge/Service-Online-2E8B57?style=for-the-badge)](https://dodam-ieum.duckdns.org/)
+[![PWA](https://img.shields.io/badge/PWA-Installable-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white)](https://dodam-ieum.duckdns.org/)
+[![AWS](https://img.shields.io/badge/AWS-EC2%20%7C%20S3-232F3E?style=for-the-badge&logo=amazonwebservices&logoColor=white)](https://aws.amazon.com/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://docs.docker.com/compose/)
+[![Region](https://img.shields.io/badge/Region-ap--southeast--2-FF9900?style=for-the-badge)](https://aws.amazon.com/about-aws/global-infrastructure/regions_az/)
 
-이 문서는 **로컬 검증 → AWS 준비 → HTTPS → PWA 확인** 순서다. SilverCare와 무관하다. 현재 소스와 운영 차단 사항은 [AUDIT.md](AUDIT.md), 실행 결과는 [검증 결과](RESULTS.md)에 기록한다. 개인 무료 플랜 프로젝트의 시드니 리전을 사용하며 서버·도메인은 미정이다. 현재 AWS 배포 완료 주소는 없다.
+**React · Spring Boot · FastAPI · PostgreSQL/pgvector · Nginx · Amazon S3**
 
-## 1. 구성과 사전 조건
+[🚀 서비스 열기](https://dodam-ieum.duckdns.org/) · [🔎 API 상태 확인](https://dodam-ieum.duckdns.org/api/auth/config) · [⚙️ Actions](https://github.com/ieum-connect/Dodam_infra/actions)
 
-목적: 검증 가능한 소스와 이미지 버전을 고정한다.
+</div>
 
-- 서비스명: `web`(Nginx+React), `backend`(Spring 8081), `ai`(FastAPI 8006), `postgres`(5432), 도구 `certbot`.
-- 공개 포트는 web의 80/443뿐이다. 기본 BIND_ADDRESS=127.0.0.1은 로컬 검증용이며 EC2에서는 승인된 공개 배포 시 0.0.0.0으로 바꾼다.
-- 초기 방식은 **로컬 Linux 이미지 빌드 → docker save → SSH/scp 전달 → docker load**다. EC2에서 앱 빌드를 하지 않는다. amd64는 현재 로컬 검증 대상이며 EC2 아키텍처 확정이 아니다. ARM을 선택하면 PLATFORM=linux/arm64로 별도 빌드·검증한다.
-- 기존 작업 사본은 변경하지 않는다. SOURCE_ROOT 아래에는 승인된 커밋의 깨끗한 사본만 둔다. 배포 파일은 C:/dodam/infra, 검증 소스는 C:/dodam/deployment-sources다.
-- 프런트는 npm ci와 npm run build를 사용한다. 운영 Vite 서버는 없다. VITE_API_BASE_URL은 빌드 시 빈 값으로 상대 경로를 사용하며 변경하려면 재빌드한다. VITE_ 변수에 비밀 키를 넣지 않는다.
-- 공유 업로드 볼륨은 두 앱 UID 10001로 접근한다. Nginx에는 이 볼륨을 마운트하지 않는다.
+---
 
-## 2. 로컬 실행
+## 한눈에 보기
 
-목적: 외부 AI 호출 없이 DB·마이그레이션·앱 기동·프록시를 검증한다. Docker Desktop Linux 컨테이너와 Python 3가 필요하다.
+도담의 프런트엔드, Spring 백엔드, AI 백엔드와 데이터베이스를 **AWS EC2 한 대의 Docker Compose 환경**에서 운영합니다. 외부 요청은 Nginx가 HTTPS로 수신하며, 의료 문서 원본과 분석 페이지는 공개 접근이 차단된 Amazon S3에 저장합니다.
 
-[로컬 Windows PowerShell]
+| 구분 | 현재 구성 |
+|---|---|
+| 운영 주소 | [`https://dodam-ieum.duckdns.org`](https://dodam-ieum.duckdns.org/) |
+| 배포 리전 | AWS Sydney · `ap-southeast-2` |
+| 실행 환경 | 단일 EC2 · Docker Compose |
+| 공개 진입점 | Nginx · HTTPS `443` |
+| 애플리케이션 | React PWA · Spring Boot · FastAPI |
+| 데이터 | PostgreSQL 16 · pgvector |
+| 문서 저장소 | Private Amazon S3 · SSE-S3 · Versioning |
+| 인증·외부 연동 | Kakao OAuth · OpenAI API · Firebase FCM |
+| 이미지 배포 | GitHub Actions → Docker Hub → EC2 수동 반영 |
+
+> [!NOTE]
+> 모바일 브라우저에서 운영 주소에 접속한 뒤 **홈 화면에 추가**하면 PWA로 설치할 수 있습니다. 프런트엔드와 API는 같은 도메인을 사용합니다.
+
+## 아키텍처
+
+<p align="center">
+  <img src="./docs/dodam-deployment-architecture.png" alt="도담 배포 아키텍처" width="100%" />
+</p>
+
+<details>
+<summary><strong>🔁 배포 파이프라인 자세히 보기</strong></summary>
+
+```mermaid
+flowchart LR
+    PR[Pull Request] --> Check[서비스별 빌드·검증]
+    Check --> Review[리뷰 및 승인]
+    Review --> Dispatch[Release images<br/>수동 실행]
+    Dispatch --> SHA[Frontend · Backend · AI<br/>정확한 Commit SHA 고정]
+    SHA --> Build[linux/amd64 이미지 빌드]
+    Build --> Hub[(Docker Hub)]
+    Hub --> Digest[Digest · Revision 검증]
+    Digest --> EC2[EC2 이미지 반영]
+    EC2 --> Deploy[deploy.sh]
+    Deploy --> Verify[Health · Nginx · API 검증]
+```
+
+- Pull Request에서는 변경된 Docker/스토리지 구성을 자동 검증하며 이미지를 게시하지 않습니다.
+- 운영 릴리스는 `main` 브랜치의 `workflow_dispatch`에서 세 저장소의 40자리 commit SHA를 명시해 실행합니다.
+- 게시 이미지의 digest와 revision label을 확인한 뒤 EC2에 반영합니다.
+- EC2에서는 소스를 빌드하지 않고 검증된 불변 이미지만 실행합니다.
+
+</details>
+
+<details>
+<summary><strong>🧩 서비스와 포트 구성</strong></summary>
+
+| 서비스 | 역할 | 컨테이너 포트 | 외부 공개 |
+|---|---|---:|:---:|
+| `web` | React 정적 파일 제공, API 프록시, TLS 종단 | `80`, `443` | ✅ |
+| `backend` | 인증, 사용자·가족·일정·문서 API | `8081` | ❌ |
+| `ai` | AI 채팅, 문서 분석, 복지 설명 | `8006` | ❌ |
+| `postgres` | 관계형 데이터와 벡터 검색 | `5432` | ❌ |
+| `certbot` | Let's Encrypt 인증서 발급·갱신 | - | ❌ |
+
+외부에는 Nginx의 `80/443`만 공개합니다. `8081`, `8006`, `5432`는 Docker 네트워크 안에서만 접근합니다. SSH `22`는 운영자 공인 IP로 제한합니다.
+
+</details>
+
+## 저장소 구성
+
+```text
+Dodam_infra/
+├─ .github/workflows/        # 이미지 릴리스·스토리지 검증 Actions
+├─ docker/                   # 서비스별 운영 Dockerfile
+├─ nginx/                    # bootstrap / HTTPS / proxy 설정
+├─ postgres/                 # pgvector 초기화
+├─ scripts/                  # 초기화·배포·상태·백업·S3 전환 스크립트
+├─ secrets/firebase/         # Firebase credential 마운트 위치(파일은 미추적)
+├─ compose.production.yml    # 운영 Compose 정의
+├─ .env.production.example   # 환경 변수 템플릿
+├─ DEPLOYMENT_GUIDE.md       # 단계별 배포 가이드
+├─ S3_DOCUMENT_STORAGE.md    # 문서 S3 전환·롤백 기록
+└─ README.md
+```
+
+<details>
+<summary><strong>🔗 애플리케이션 저장소</strong></summary>
+
+| 영역 | 저장소 |
+|---|---|
+| Frontend | [`ieum-connect/Dodam_frontend`](https://github.com/ieum-connect/Dodam_frontend) |
+| Backend | [`ieum-connect/Dodam_backend`](https://github.com/ieum-connect/Dodam_backend) |
+| AI Backend | [`ieum-connect/Dodam_AI_backend`](https://github.com/ieum-connect/Dodam_AI_backend) |
+| Infrastructure | [`ieum-connect/Dodam_infra`](https://github.com/ieum-connect/Dodam_infra) |
+
+</details>
+
+## 로컬에서 실행하기
+
+> Docker Desktop의 Linux 컨테이너와 Python 3가 필요합니다. 로컬 검증은 실제 OpenAI API 호출 없이 동작하도록 격리됩니다.
+
 ```powershell
 Set-Location C:\dodam\infra
-docker version
-docker compose version
 python scripts/init-local.py
 docker compose --env-file .env.production.local -f compose.production.yml config --quiet
 .\scripts\build.ps1
 docker compose --env-file .env.production.local -f compose.production.yml up -d --no-build --wait --wait-timeout 240
-docker compose --env-file .env.production.local -f compose.production.yml ps
-docker compose --env-file .env.production.local -f compose.production.yml exec -T web nginx -t
-curl.exe -i http://localhost:4280/api/auth/config
-curl.exe -I http://localhost:4280/index.html
 ```
 
-init-local.py는 이미 파일이 있으면 보존하고 중단한다. 로컬 전용 무작위 비밀번호/토큰을 생성한다. AI가 빈 임베딩 키로 기동되지 않아 로컬에는 식별 가능한 가짜 임베딩 키, 막힌 loopback LLM 주소, 앱/DB 외부 통신 차단 네트워크를 적용한다. 실제 운영 키는 이 파일에 넣지 않는다. Python이 PATH에 없으면 설치된 python.exe 절대 경로를 사용한다.
+```powershell
+curl.exe -i http://localhost:4280/api/auth/config
+curl.exe -I http://localhost:4280/index.html
+docker compose --env-file .env.production.local -f compose.production.yml ps
+```
 
-정상: 네 서비스 healthy, auth/config JSON, index.html 200 및 no-cache. 실패 시:
-- Docker 연결 실패: Desktop Linux engine 확인.
-- build 실패: build-local.log와 패키지 다운로드/네트워크 확인. 키를 추가해서 빌드를 고치지 않는다.
-- DB 실패: postgres 로그 및 named volume 상태 확인. 이미 초기화된 DB의 비밀번호는 env 변경만으로 바뀌지 않는다.
-- Flyway 실패: backend 로그의 버전/체크섬을 확인하고 적용된 migration을 수정하지 않는다.
-- 502: backend/ai health와 DNS 서비스명 확인. 컨테이너에서 localhost는 자기 자신이다.
+<details>
+<summary><strong>✅ 로컬 정상 기준</strong></summary>
 
-[로컬 Windows PowerShell]
+- `web`, `backend`, `ai`, `postgres`가 모두 `healthy`
+- `/api/auth/config`가 `200` JSON 반환
+- `/index.html`이 `200`과 `Cache-Control: no-cache` 반환
+- 해시가 포함된 JS/CSS만 장기 immutable cache 적용
+- `/internal`, 직접 `/api/v1`, 원본 `/local-documents` 접근 차단
+- 새 DB의 Flyway migration과 pgvector extension 적용 완료
+
+</details>
+
+<details>
+<summary><strong>🧰 자주 쓰는 로컬 점검 명령</strong></summary>
+
 ```powershell
 docker compose --env-file .env.production.local -f compose.production.yml logs --tail 100 backend
 docker compose --env-file .env.production.local -f compose.production.yml logs --tail 100 ai
-docker compose --env-file .env.production.local -f compose.production.yml exec -T postgres psql -U dodam -d dodam -c 'SELECT version, success FROM flyway_schema_history ORDER BY installed_rank;'
-docker compose --env-file .env.production.local -f compose.production.yml exec -T ai python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8006/health').status)"
+docker compose --env-file .env.production.local -f compose.production.yml exec -T web nginx -t
+docker compose --env-file .env.production.local -f compose.production.yml exec -T postgres `
+  psql -U dodam -d dodam -c 'SELECT version, success FROM flyway_schema_history ORDER BY installed_rank;'
 ```
 
-로그는 비밀 값·문서 내용이 없는지 확인한 뒤 공유한다. config 전체 출력을 사용하지 않는다. 로컬 HTTP는 실제 휴대전화 HTTPS/PWA 검증이 아니다.
+</details>
 
-## 3. AWS 선택과 비용 확인 — 아직 실행하지 않음
+## 운영 배포
 
-목적: 서버 생성 전에 계정·예산·도메인·백업 정책을 확정한다.
+<details>
+<summary><strong>🚢 최초 배포 순서</strong></summary>
 
-[AWS 콘솔]
-1. 구글 로그인으로 기존 프로젝트에 접속하고 시드니(ap-southeast-2)를 확인. AWS Settings/청구 관리에서 실제 크레딧 조건·만료일 확인. Budgets에서 예산과 알림 수신자 설정. 현재 가입 방식에서는 리전 메뉴나 URL로 서울로 전환하지 않는다.
-2. EC2 → Instances → Launch instances. 이름 `dodam-production`. Ubuntu LTS와 아키텍처를 선택하되 이미지 PLATFORM과 일치시킨다. 사양·gp3 디스크 용량은 부하/예산 확인 후 결정한다. 1GB RAM에서 세 앱+DB가 안정적이라고 가정하지 않는다.
-3. Key pair(login) → 새 키 또는 승인된 기존 키. 개인키는 개인 PC에 보관하고 공유·저장소 업로드 금지. Network settings → 관리자 공인 IP/32만 SSH 22 허용, 웹 80/443 허용. 5432/8081/8006은 열지 않는다.
-4. Storage → 암호화 활성화, 크기/종료 시 삭제 정책 확인. Advanced details → IMDSv2 required. Instance profile은 실제 필요한 권한만 부여한다.
-5. EC2 → Elastic IP addresses에서 고정 IPv4 필요 여부 결정. 비용을 확인하고 선택하면 Allocate → Associate로 서버에 연결한다.
-6. DNS 제공업체 또는 Route 53 → Hosted zones → 선택한 도메인의 A 레코드를 서버 IPv4로 설정한다. IPv6를 제공하지 않으면 잘못된 AAAA 레코드를 두지 않는다.
+1. AWS Sydney 리전에서 EC2, EBS, 보안 그룹과 관리자 SSH 접근을 준비합니다.
+2. DNS A 레코드를 EC2의 고정 IPv4로 연결합니다.
+3. `.env.production.example`을 복사해 `.env.production`을 만들고 권한을 `600`으로 제한합니다.
+4. 검증된 세 애플리케이션 이미지를 EC2에 준비합니다.
+5. `NGINX_MODE=bootstrap`으로 최초 HTTP health endpoint만 실행합니다.
+6. Certbot webroot 방식으로 인증서를 발급합니다.
+7. `NGINX_MODE=https`로 전환하고 Nginx 설정 검사 후 reload합니다.
+8. 실제 모바일 기기에서 로그인, PWA 설치, 문서, AI, 푸시 알림을 검증합니다.
 
-과금 항목: EC2 실행, EBS, 공인 IPv4, 데이터 전송, DNS/도메인, 외부 백업 저장·요청, 별도 AI API. 무료/크레딧 여부와 금액은 계정·리전·사양 확정 전 단정하지 않는다. [AWS IPv4 요금](https://aws.amazon.com/vpc/pricing/)과 [보안 그룹 공식 설명](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-security-groups.html)을 확인한다.
+상세 절차는 [`DEPLOYMENT_GUIDE.md`](./DEPLOYMENT_GUIDE.md)와 [`EC2_SYDNEY.md`](./EC2_SYDNEY.md)를 따릅니다.
 
-정상 확인: 인스턴스 running, 상태 검사 통과, 관리 IP에서 SSH 가능, 공개된 인바운드는 위 세 포트뿐. 실패 시 키 경로/ubuntu 사용자/서버 상태/현재 관리자 IP/보안 그룹을 차례로 확인한다.
+</details>
 
-## 4. EC2 Docker와 환경 준비
+<details>
+<summary><strong>📦 릴리스 이미지 만들기</strong></summary>
 
-아래 `<...>`는 아직 제공되지 않은 입력값이다. 실제 서버 주소·키·도메인 확정 후 대체한다.
+GitHub Actions의 **Release images**를 수동 실행합니다.
 
-[로컬 Windows PowerShell]
-```powershell
-ssh -i '<키 파일 절대 경로>' ubuntu@<서버 주소>
-```
+| 입력 | 설명 |
+|---|---|
+| `release` | 재사용하지 않는 소문자 릴리스 이름 |
+| `web_sha` | Frontend의 40자리 commit SHA |
+| `backend_sha` | Backend의 40자리 commit SHA |
+| `ai_sha` | AI Backend의 40자리 commit SHA |
+| `publish` | Docker Hub 게시 여부 |
 
-[AWS EC2 Ubuntu]
-```bash
-uname -m
-cat /etc/os-release
-df -h
-free -h
-docker version
-docker compose version
-```
+게시 완료 후 Actions artifact의 `image-digests.txt`와 각 이미지의 revision을 확인합니다. `latest` 태그만으로 운영 버전을 식별하지 않습니다.
 
-Docker가 없고 지원되는 Ubuntu인 경우 [공식 apt 설치 안내](https://docs.docker.com/engine/install/ubuntu/)를 확인해 다음을 실행한다. 기존 충돌 패키지가 있으면 공식 문서에 따라 별도 정리하며 사용자 데이터는 삭제하지 않는다.
+</details>
 
-[AWS EC2 Ubuntu]
-```bash
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl python3
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
-. /etc/os-release
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${UBUNTU_CODENAME:-$VERSION_CODENAME} stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-sudo docker version
-sudo docker compose version
-sudo install -d -m 700 /opt/dodam/infra
-```
+<details>
+<summary><strong>🖥️ EC2에서 배포·상태 확인</strong></summary>
 
-이후 Ubuntu 명령은 `sudo -i`로 들어간 관리자 셸 기준이다. Docker 권한을 일반 계정에 줄지 여부는 별도로 결정한다. 공식 Docker 저장소 설치 외 임의 스크립트는 실행하지 않는다.
-
-## 5. 이미지 전달과 최초 HTTP 기동
-
-목적: 운영 서버에 GitHub 토큰이나 소스 빌드 도구를 두지 않고 검증 이미지를 전달한다. 최종 승인 소스와 RELEASE_TAG로 빌드 후 export한다. 같은 태그를 다른 빌드에 재사용하지 않는다.
-
-[로컬 Windows PowerShell]
-```powershell
-Set-Location C:\dodam\infra
-.\scripts\export-release.ps1
-scp -i '<키 파일 절대 경로>' releases/<RELEASE_TAG>/images.tar releases/<RELEASE_TAG>/infra.tar.gz releases/<RELEASE_TAG>/versions.json releases/<RELEASE_TAG>/checksum.json ubuntu@<서버 주소>:/home/ubuntu/
-```
-
-[AWS EC2 Ubuntu, 관리자 셸]
 ```bash
 cd /opt/dodam/infra
-sha256sum /home/ubuntu/images.tar
-# 로컬 checksum.json의 Hash와 일치하는지 비교 후 진행
-docker load -i /home/ubuntu/images.tar
-tar -xzf /home/ubuntu/infra.tar.gz
-cp /home/ubuntu/versions.json ./deployed-versions.json
-umask 077
-cp .env.production.example .env.production
-nano .env.production
-chmod 600 .env.production
-```
-
-입력: RELEASE_TAG는 전달 이미지와 동일, DOMAIN 실제 호스트명, PUBLIC_ORIGIN=https://해당호스트, NGINX_MODE=bootstrap, BIND_ADDRESS=0.0.0.0, HTTP_PORT=80, HTTPS_PORT=443, COOKIE_SECURE=true. POSTGRES_PASSWORD/JWT_SECRET/AI_INTERNAL_TOKEN은 각각 32바이트 이상 난수 hex로 안전한 비밀 관리 도구에서 생성해 입력한다. hex만 받는 이유는 DB URL 인코딩·Compose 치환 오류 방지다. 운영 DB 비밀번호는 로컬 값을 복사하지 않는다. 내부 토큰은 Compose가 두 앱에 같은 값을 전달한다.
-
-Kakao 키는 해당 도담 앱 값만 입력한다. 운영 AI 기동에는 유효한 임베딩 키 설정 또는 담당자의 빈 키 지연 초기화 수정이 필요하다. 키·모델 확인 전 운영 배포를 진행하지 않는다. 로컬 가짜 키는 운영에 복사하지 않는다. ISOLATE_NETWORK=false는 운영 외부 API 연결용이다. 유료 호출 테스트는 사용자 명시 승인 후 수행한다. 일반 LLM_API_KEY와 문서 OPENAI_API_KEY, EMBEDDING_API_KEY를 구분한다. 환경 변경 후 컨테이너 재생성이 필요하다.
-
-서비스별 이미지(`BACKEND_IMAGE`, `AI_IMAGE`, `WEB_IMAGE`)나 `IMAGE_PREFIX`를 사용할 때는 export와 운영 Compose가 같은 이미지 이름·태그를 해석하도록 설정한다. 배포 스크립트는 기본 Firebase 마운트 디렉터리(`./secrets/firebase`)를 만든다. 푸시를 사용할 때는 백엔드 컨테이너(UID 10001)가 읽을 수 있는 `service-account.json`을 해당 디렉터리에 따로 준비한다. `FIREBASE_SECRETS_DIR`로 다른 경로를 지정했다면 그 디렉터리도 직접 준비한다.
-
-시연 환경에서는 프런트엔드 [#47](https://github.com/ieum-connect/Dodam_frontend/pull/47)과 Spring 백엔드 [#50](https://github.com/ieum-connect/Dodam_backend/pull/50)의 변경을 포함한 이미지로 배포한다. 운영 환경 파일에서 `DEMO_LOGIN=true`와 `DEMO_SHOWCASE_ONLY=true`를 설정하면 카카오 로그인 아래에 김민지·박지훈 버튼이 표시되고, Spring은 이 두 시연 계정만 접속 코드 없이 허용한다. 프런트엔드는 `/api/auth/config`로 활성 상태를 확인하므로 별도 빌드 환경 변수가 필요 없다. AI 백엔드는 기존 내부 URL과 공유 토큰으로 연결한다. 시연을 종료할 때는 `DEMO_LOGIN=false`로 설정하고 백엔드 컨테이너를 재생성한다.
-
-[AWS EC2 Ubuntu, 관리자 셸]
-```bash
 bash scripts/deploy.sh .env.production
-curl -i http://127.0.0.1/nginx-health
+bash scripts/status.sh .env.production
 ```
 
-정상: nginx-health 200, 일반 HTTP는 HTTPS 준비 중 503. bootstrap 단계는 개인정보와 로그인 화면을 HTTP로 제공하지 않는다. 실패 시 상태 확인 스크립트와 서비스 로그를 점검한다.
+`deploy.sh`는 운영 설정을 생성하고 Compose 구문을 확인한 뒤, 이미 준비된 이미지로 컨테이너를 기동합니다. 이어서 `nginx -t`, reload와 서비스 상태 점검을 수행합니다.
 
-## 6. DNS·HTTPS 발급과 갱신
-
-목적: 인증서 없는 상태에서 Nginx 기동 실패를 피하고 검증된 도메인만 HTTPS로 제공한다. Certbot webroot 방식 하나만 사용한다.
-
-[로컬 Windows PowerShell]
-```powershell
-Resolve-DnsName <도담 도메인> -Type A
-curl.exe -i http://<도담 도메인>/nginx-health
-```
-
-[AWS EC2 Ubuntu, 관리자 셸]
 ```bash
-cd /opt/dodam/infra
-docker compose --env-file .env.production -f compose.production.yml run --rm certbot certonly --webroot -w /var/www/acme -d <도담 도메인> --email <관리 이메일>
-# 약관은 사용자가 읽고 동의. 발급 성공 후 NGINX_MODE=https로 수정
-nano .env.production
+curl -fsS https://dodam-ieum.duckdns.org/api/auth/config
+docker compose --env-file .env.production -f compose.production.yml ps
+docker compose --env-file .env.production -f compose.production.yml logs --tail 100 backend
+docker compose --env-file .env.production -f compose.production.yml logs --tail 100 ai
+```
+
+</details>
+
+<details>
+<summary><strong>🔐 HTTPS 인증서 발급·갱신</strong></summary>
+
+```bash
+docker compose --env-file .env.production -f compose.production.yml run --rm certbot \
+  certonly --webroot -w /var/www/acme \
+  -d dodam-ieum.duckdns.org --email <관리자-이메일>
+```
+
+발급 성공 후 `NGINX_MODE=https`로 바꾸고 다음 순서로 반영합니다.
+
+```bash
 python3 scripts/configure.py .env.production
 docker compose --env-file .env.production -f compose.production.yml exec -T web nginx -t
 docker compose --env-file .env.production -f compose.production.yml exec -T web nginx -s reload
-curl -I http://<도담 도메인>
-curl -I https://<도담 도메인>
-curl -I https://<도담 도메인>/sw.js
-curl -I https://<도담 도메인>/manifest.webmanifest
-curl -I https://<도담 도메인>/index.html
 docker compose --env-file .env.production -f compose.production.yml run --rm certbot renew --dry-run
 ```
 
-정상: HTTP 308, 유효한 인증서, HTML no-cache. PWA 미병합 현재 sw.js/manifest는 404가 정상이며 HTML로 대체되면 실패다. API 미인증은 JSON 401 등 API 응답이어야 한다. 원본 /local-documents는 권한 API가 준비되기 전 403 유지한다. /internal과 /api/v1 직접 접근은 404다.
+인증서 갱신은 `scripts/renew.sh`가 성공 후 Nginx 구문 검사와 reload까지 수행합니다.
 
-실패: A/AAAA 레코드·80 인바운드·webroot 공유 볼륨·인증서 도메인 경로 확인. Nginx 검사 실패 시 reload하지 말고 active/default.conf를 이전 설정으로 되돌린다. TLS 경고를 우회해 성공으로 기록하지 않는다.
+</details>
 
-[AWS EC2 Ubuntu, 관리자 셸]
-```bash
-crontab -e
-# 다음 한 줄 추가 (하루 2회; 전용 로그 권한 제한)
-17 3,15 * * * /bin/bash /opt/dodam/infra/scripts/renew.sh /opt/dodam/infra/.env.production >> /var/log/dodam-cert-renew.log 2>&1
-```
+<details>
+<summary><strong>🪣 Amazon S3 문서 저장소</strong></summary>
 
-갱신 성공 후 nginx -t 및 reload를 자동 실행한다. 실제 timer 실행·로그와 인증서 만료일을 확인해야 자동 갱신 검증 완료다. [Certbot 갱신 안내](https://eff-certbot.readthedocs.io/en/stable/using.html#renewing-certificates).
+문서 원본과 분석 페이지는 EC2 로컬 볼륨이 아닌 **비공개 S3 버킷**에 저장합니다.
 
-## 7. Kakao 로그인
+- Block Public Access 4개 항목 활성화
+- Bucket owner enforced
+- SSE-S3(`AES256`) 암호화
+- 객체 Versioning 활성화
+- EC2 IAM Role에 필요한 버킷 권한만 부여
+- 브라우저에는 만료 시간이 짧은 presigned URL만 전달
+- 마이그레이션 시 전체 파일을 다시 읽어 SHA-256 검증
 
-[카카오 개발자 콘솔]
-- 내 애플리케이션 → 도담 앱 → 앱 설정/플랫폼 → Web 사이트 도메인에 실제 HTTPS origin.
-- 카카오 로그인 → 사용 설정 → 상태 ON. 앱 → 플랫폼 키 → REST API 키 → 리다이렉트 URI에 `https://<도담 도메인>/login/oauth2/code/kakao`.
-- 앱 키에서 도담 REST API 키 확인, 사용 중이면 보안 항목의 client secret을 서버에 입력.
-- 동의 항목은 실제 서비스가 사용하는 항목만 확인. 콘솔 개편으로 메뉴명이 다르면 ‘플랫폼/Web’, ‘카카오 로그인/Redirect URI’ 설정을 찾는다.
+2026-11-16 운영 전환에서 **20개 파일, 7,888,461 bytes**의 read-back hash 일치가 확인됐습니다. 전환 절차와 롤백 주의사항은 [`S3_DOCUMENT_STORAGE.md`](./S3_DOCUMENT_STORAGE.md)를 참고합니다.
 
-[현재 Kakao 공식 REST API 설정](https://developers.kakao.com/docs/ko/kakaologin/rest-api)을 확인한다.
+</details>
 
-FRONTEND_ORIGIN은 Compose PUBLIC_ORIGIN에서 동일하게 전달된다. 실제 휴대전화에서 로그인 시작 → 인증 → 콜백 → 화면 → 새로고침 유지 → 로그아웃 확인. Cookie Secure/HttpOnly/SameSite=Lax와 리다이렉트 HTTPS를 개발자 도구에서 확인한다. 설치형 앱의 복귀는 별도 검증한다.
+<details>
+<summary><strong>💾 백업과 복구</strong></summary>
 
-## 8. PWA·푸시 및 기능 검증
-
-정재헌에게 sw.js 파일명/등록 scope, manifest, 아이콘, 시작 URL, 업데이트 정책, 개인정보/API 캐시 제외를 확인받는다. 서버는 파일이 존재할 때만 제공하며 장기 캐시는 콘텐츠 해시 JS/CSS만 적용한다. Nginx 캐시 정책이 서비스 워커 내부 캐시 정책을 대신하지 않는다.
-
-Web Push/FCM 방식은 아직 확인되지 않았다. VAPID/FCM 키를 임의로 필수 설정에 넣지 않는다. PWA 설치 성공과 실제 푸시 성공은 분리한다. 프런트는 권한·구독·수신·탭 이동, 백엔드는 사용자/기기 구독·발송·취소, 배포는 HTTPS와 서버 통신을 맡는다.
-
-실제 기기: 허용·거절, 화면 닫힘 수신, 일정 변경/삭제/완료 후 중복 방지, 로그아웃/계정 변경 후 수신자 분리. 아직 실시하지 않았다.
-
-기능별 결과는 `RESULTS.md`에 화면/API, 정상 여부, 재현 방법, 담당/이슈, 재확인을 남긴다. 로그인·가족·방문·메모/태그·일정·복약/알림·문서·AI·복지·예방접종·성장을 각각 기록한다. 미병합 기능은 기능 미구현/미포함, 키 없음은 환경 문제, Nginx 차단은 배포 제한으로 구분한다.
-
-## 9. 백업·재배포·복구
-
-목적: DB와 파일을 같은 시점으로 백업하고 이미지 버전과 DB 호환성을 구분한다. 먼저 별도 저장소의 암호화/접근권한/보존기간을 결정한다. 동일 EC2의 backups만으로 장애 복구가 충분하지 않다.
-
-[AWS EC2 Ubuntu, 관리자 셸]
 ```bash
 cd /opt/dodam/infra
 bash scripts/backup.sh .env.production
-# 백업 중 앱 쓰기 정지; 완료 후 자동 재시작. 해시 확인 후 승인된 외부 저장소로 암호화 전송
 ```
 
-재배포: 새 sources 커밋/infra 커밋/이미지 태그/ID/migration 목록/백업 위치 기록 → 로컬 빌드 및 export → scp → load → RELEASE_TAG 갱신 → deploy.sh → 검증. 이전 이미지는 검증 완료 전 삭제하지 않는다. `latest`만 사용하지 않는다. down -v는 사용하지 않는다.
+백업 스크립트는 쓰기 서비스(`web`, `ai`, `backend`)를 잠시 중지하고 다음 항목을 같은 시점에 저장합니다.
 
-이미지 롤백: DB가 이전 코드와 호환됨을 먼저 확인한 뒤 env RELEASE_TAG를 이전 값으로 바꾸고 deploy.sh. Flyway 적용 파일을 수정·제거하지 않는다. DB 복원은 운영 DB 위에서 실행하지 않고 **새 프로젝트/새 볼륨**으로 먼저 복원한다.
+- PostgreSQL custom-format dump
+- 로컬 호환용 uploads archive
+- 실행 이미지 목록
+- SHA-256 checksum
 
-[AWS EC2 Ubuntu, 관리자 셸 — 별도 복구 환경]
-```bash
-cp .env.production .env.restore
-chmod 600 .env.restore
-# COMPOSE_PROJECT_NAME=dodam-restore, BIND_ADDRESS=127.0.0.1,
-# HTTP_PORT=5280, HTTPS_PORT=5443로 수정. 운영과 다른 볼륨인지 확인
-nano .env.restore
-docker compose --env-file .env.restore -f compose.production.yml up -d postgres
-docker compose --env-file .env.restore -f compose.production.yml exec -T postgres pg_isready -U dodam -d dodam
-docker compose --env-file .env.restore -f compose.production.yml exec -T postgres pg_restore -U dodam -d dodam --no-owner --exit-on-error < backups/<백업시각>/database.dump
-docker compose --env-file .env.restore -f compose.production.yml run --rm --no-deps --entrypoint tar ai -C /data/object-storage -xzf - < backups/<백업시각>/uploads.tar.gz
-docker compose --env-file .env.restore -f compose.production.yml up -d --no-build --wait
-```
+> [!WARNING]
+> 같은 EC2 안의 `backups/`만으로는 장애 복구가 충분하지 않습니다. 결과물을 암호화해 별도 저장소로 옮기고 복원 테스트까지 완료해야 합니다. 운영 DB 위에서 바로 복원하지 말고 별도 Compose project와 새 volume에서 검증합니다.
 
-복구 환경에서 사용자 접근 권한/문서·DB 일치/로그인/핵심 기능을 확인한 뒤 정식 전환을 결정한다. 복원용 DB의 최초 vector extension과 dump 충돌 시 깨끗한 복구 DB에서 extension 생성 상태를 확인하며 운영 DB를 수정하지 않는다.
+</details>
+
+<details>
+<summary><strong>↩️ 재배포와 롤백 원칙</strong></summary>
+
+1. 배포 전 DB·문서 백업과 현재 이미지 digest를 기록합니다.
+2. 이전 이미지는 새 버전 검증이 끝날 때까지 삭제하지 않습니다.
+3. DB가 이전 코드와 호환되는지 확인한 뒤 이미지 버전을 되돌립니다.
+4. 이미 적용된 Flyway migration 파일을 수정하거나 제거하지 않습니다.
+5. S3 전환 후 새 문서가 S3에만 존재할 수 있으므로 저장소 설정만 `local`로 되돌리지 않습니다.
+6. `docker compose down -v`는 운영에서 사용하지 않습니다.
+
+</details>
+
+## 환경 변수
+
+<details>
+<summary><strong>⚙️ 필수 설정 그룹 보기</strong></summary>
+
+| 그룹 | 주요 변수 |
+|---|---|
+| 배포 | `RELEASE_TAG`, `BACKEND_IMAGE`, `AI_IMAGE`, `WEB_IMAGE`, `PLATFORM` |
+| 네트워크 | `DOMAIN`, `PUBLIC_ORIGIN`, `BIND_ADDRESS`, `HTTP_PORT`, `HTTPS_PORT`, `NGINX_MODE` |
+| 보안 | `POSTGRES_PASSWORD`, `JWT_SECRET`, `AI_INTERNAL_TOKEN`, `COOKIE_SECURE` |
+| Kakao | `KAKAO_CLIENT_ID`, `KAKAO_CLIENT_SECRET`, `KAKAO_ADMIN_KEY` |
+| AI | `OPENAI_API_KEY`, `LLM_API_KEY`, `EMBEDDING_API_KEY`, `LLM_MODEL`, `EMBEDDING_MODEL` |
+| S3 | `DOCUMENT_STORAGE_PROVIDER`, `DOCUMENT_S3_BUCKET`, `DOCUMENT_S3_REGION` |
+| FCM | `PUSH_ENABLED`, `FIREBASE_PROJECT_ID`, `FIREBASE_VAPID_KEY`, `FIREBASE_SECRETS_DIR` |
+| Demo | `DEMO_LOGIN`, `DEMO_SHOWCASE_ONLY` |
+
+전체 목록과 기본값은 [`.env.production.example`](./.env.production.example)에서 확인합니다.
+
+> [!CAUTION]
+> `.env.production`, AWS key, Firebase service account, OAuth secret, API key를 Git에 커밋하지 마세요. `VITE_` 변수에는 브라우저에 노출되면 안 되는 값을 넣지 않습니다.
+
+</details>
+
+<details>
+<summary><strong>🤖 AI 모델 기본 설정</strong></summary>
+
+| 용도 | 환경 변수 | 기본값 |
+|---|---|---|
+| LLM | `LLM_MODEL` | `gpt-6-luna` |
+| Vision | `OPENAI_VLM_MODEL` | `gpt-5.6-sol` |
+| Embedding | `EMBEDDING_MODEL` | `text-embedding-3-small` |
+| Embedding 차원 | `EMBEDDING_DIMENSIONS` | `768` |
+
+운영에서 유효한 키와 모델 접근 권한을 확인한 뒤 배포합니다. 로컬 검증용 가짜 키를 운영 환경에 복사하지 않습니다.
+
+</details>
+
+## 운영 체크리스트
+
+<details open>
+<summary><strong>🟢 배포 직후</strong></summary>
+
+- [ ] 네 컨테이너가 모두 `healthy`인지 확인
+- [ ] `https://dodam-ieum.duckdns.org/`가 `200`인지 확인
+- [ ] `/api/auth/config`가 JSON과 `Cache-Control: no-store`를 반환하는지 확인
+- [ ] HTTP가 HTTPS로 `308` redirect 되는지 확인
+- [ ] 인증서 도메인과 만료일 확인
+- [ ] Kakao 로그인·새로고침 유지·로그아웃 확인
+- [ ] PWA 설치와 service worker update 확인
+- [ ] 문서 업로드·원본 조회·분석 결과 확인
+- [ ] AI 채팅·임베딩·복지 설명 확인
+- [ ] FCM 알림 수신·탭 이동·로그아웃 후 수신자 분리 확인
+- [ ] 오류 로그에 비밀 값이나 문서 본문이 남지 않는지 확인
+
+</details>
+
+<details>
+<summary><strong>🌙 정기 운영</strong></summary>
+
+- [ ] 인증서 갱신 dry-run 및 실제 timer 로그 확인
+- [ ] EC2/EBS/공인 IPv4/S3/API 비용 확인
+- [ ] 디스크·메모리·컨테이너 재시작 횟수 확인
+- [ ] S3 암호화·버전 관리·공개 접근 차단 유지 확인
+- [ ] 백업 checksum과 외부 보관 상태 확인
+- [ ] 별도 환경에서 DB·문서 복원 테스트
+- [ ] 오래된 이미지 정리는 현행·직전 버전 검증 후 수행
+
+</details>
+
+<details>
+<summary><strong>🚨 장애 대응 빠른 확인</strong></summary>
+
+| 증상 | 먼저 확인할 항목 |
+|---|---|
+| `502 Bad Gateway` | `backend`/`ai` health, Docker DNS 서비스명, 애플리케이션 로그 |
+| 로그인 redirect 오류 | Kakao Web domain, Redirect URI, `PUBLIC_ORIGIN`, secure cookie |
+| DB 인증 실패 | 기존 volume의 실제 비밀번호와 `.env.production` 일치 여부 |
+| Flyway 실패 | migration version/checksum, 이미 적용된 파일 변경 여부 |
+| 문서 조회 실패 | S3 IAM role, bucket/region, presigned URL 만료, 객체 key |
+| AI 기동 실패 | LLM·embedding key, 모델 접근 권한, `AI_INTERNAL_TOKEN` |
+| PWA 갱신 안 됨 | `sw.js`/manifest `no-cache`, service worker scope, 브라우저 cache |
+| 인증서 발급 실패 | DNS A/AAAA, 보안 그룹 `80`, ACME webroot volume |
+
+</details>
+
+## 보안 원칙
+
+<details>
+<summary><strong>🛡️ 운영 보안 기준</strong></summary>
+
+- EC2 Metadata Service는 IMDSv2를 사용합니다.
+- SSH는 관리자 공인 IP의 `/32`만 허용합니다.
+- DB와 애플리케이션 내부 포트를 인터넷에 공개하지 않습니다.
+- 컨테이너 간 AI 호출에는 공유 내부 토큰을 사용합니다.
+- API 응답과 인증 관련 경로에는 `no-store`를 적용합니다.
+- `/internal`, 직접 `/api/v1`, 로컬 원본 문서 경로는 Nginx에서 차단합니다.
+- 운영 secret은 GitHub Secret 또는 제한된 권한의 서버 환경 파일로 관리합니다.
+- 로그·백업을 공유하기 전에 secret과 개인정보 포함 여부를 확인합니다.
+- S3는 비공개 버킷과 EC2 IAM Role을 사용하며 장기 access key를 서버에 저장하지 않습니다.
+
+</details>
+
+## 관련 문서
+
+<details>
+<summary><strong>📚 문서 모음</strong></summary>
+
+| 문서 | 내용 |
+|---|---|
+| [`DEPLOYMENT_GUIDE.md`](./DEPLOYMENT_GUIDE.md) | 최초 배포부터 HTTPS·PWA 검증까지 단계별 안내 |
+| [`EC2_SYDNEY.md`](./EC2_SYDNEY.md) | Sydney 리전 EC2 설정과 사전 확인 |
+| [`S3_DOCUMENT_STORAGE.md`](./S3_DOCUMENT_STORAGE.md) | S3 준비·마이그레이션·검증·롤백 |
+| [`AUDIT.md`](./AUDIT.md) | 소스와 운영 차단 사항 점검 |
+| [`RESULTS.md`](./RESULTS.md) | 로컬·운영 검증 결과 기록 |
+| [`도담_배포_가이드라인.html`](./도담_배포_가이드라인.html) | 브라우저용 배포 가이드 |
+
+`planning/`의 Kubernetes 자료는 초기 비교 검토 기록입니다. 현재 운영 아키텍처는 **단일 EC2 + Docker Compose**이며 EKS, ALB, NAT Gateway를 사용하지 않습니다.
+
+</details>
+
+---
+
+<div align="center">
+
+**Team IEUM · 팀 이음**
+
+도담의 배포와 운영 기록은 재현 가능하고, 검증 가능하며, 비밀 값을 포함하지 않아야 합니다.
+
+<sub>Architecture & operations baseline · 2026-11-17</sub>
+
+</div>
